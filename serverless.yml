@@ -1,0 +1,93 @@
+# Name of the daily auto-tagging service
+service: daily-auto-tagging
+
+# The required version of serverless we have to be using for this to work
+frameworkVersion: ">=1.26.0 <2.0.0"
+
+##############################
+# Our service provider and runtime/region definitions
+##############################
+provider:
+  name: aws                       # Which provider to use
+  description: "Daily Auto Tagging Lambda Script"
+  stage: ${opt:stage, 'dev'}      # Which stage to deploy to
+  runtime: python3.6              # Which Lambda runtime to use
+  logRetentionInDays: 30          # How many days we want to maintain logs in CloudWatch
+  region: 'ca-central-1'             # Which AWS region to deploy in, ca-central-1 by default, but overridable
+  memorySize: 128                # In megabytes, 128 minimum in 64MB increments
+  timeout: 600                    # In seconds
+  versionFunctions:  true         # We want to version our functions so we can revert if we need to
+  cfLogs: true                    # This allows us to customize our expiration time of our CloudWatch Log Buckets
+  environment:
+    KEY_BACKUP: "Backup"                      # This is Key:Backup 
+    VAL_BACKUP: "True"                        # This is Value for Backup
+    KEY_LOB: "Line Of Business"               # This is Key:Line of Business Tag
+    VAL_LOB: "Cloud Computing"                # This is Value for Line Of Business Tag
+    KEY_COST: "Cost Centre"                   # This is Key: Cost Centre Tag
+    VAL_COST: "123456"                        # This is Value for Cost Centre Tag
+    KEY_MS: "Middleware Service"              # This is Key:Middleware Service Tag
+    VAL_MS: "Test"                            # This is Value:Middleware Service Tag
+    KEY_MS_GROUP: "Service Group"  # This is Key:Middleware Service Group Tag
+    VAL_MS_GROUP: "Test"                      # This is Value:Middleware Service Value Tag
+    KEY_WORKLOAD: "Workload"                  # This is Key:Workload Tag
+    VAL_WORKLOAD: "Operations"            # This is Value:Workload Tag
+    KEY_DATA_CLASSIFICATION: "Data Classification" # This is Key:Data_Classification Tag
+    VAL_DATA_CLASSIFICATION: "Tier 1"     # This is Value:Data_Classification Tag
+    KEY_ENV: "Environment"                    # This is Key: Environment Tag
+    VAL_ENV: "Lab"                            # This is Value: Environment Tag      
+    KEY_CLIENT: "Client"                      # This is Key: Client Tag
+    VAL_CLIENT: "Packaging"                         # This is Value: Client Tag
+    OWNER_ID: "1234567890"                  # This is Snapshot OwnerID: As snapshot has public images component. To tag private/owned images Owner Id is necessary
+  iamRoleStatements:
+  # We must be able to do what this script needs to do...
+  - Effect: Allow
+    Action:
+      - ec2:DescribeImages
+      - ec2:DescribeInstances
+      - ec2:CreateTags
+      - ec2:DescribeTags
+      - ec2:DescribeVolumes
+      - ec2:DescribeSnapshots
+      - events:*
+    Resource: "*"
+
+
+##############################
+# Our function definition
+##############################
+functions:
+  daily_auto_tag:
+    description: This script runs every minute for tagging instances
+    handler: lambda_tag_untagged_ec2.lambda_handler
+    events:
+      - schedule:
+          description: Scheduled to run daily-auto-tagging function nightly 
+          rate: cron(* * * * ? *)
+          enabled: true
+      - cloudwatchEvent:
+          description: Creates Event Rule and triggers daily-auto-tagging function based on state changes
+          event: 
+           source:
+             - "aws.ec2"
+           detail-type:
+             - "EC2 Instance State-change Notification"
+             - "EBS Snapshot Notification"
+             - "EBS Volume Notification"
+           detail:
+             state:
+               - pending
+               - running
+               - createSnapshot
+               - createVolume
+
+
+##############################
+package:
+  exclude:
+    - ".DS_Store"
+    - ".git"
+    - ".gitignore"
+    - ".serverless"
+    - "requirements.txt"
+    - "**.md"
+    - ".png"
